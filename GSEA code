@@ -1,0 +1,383 @@
+####Pathway analysis from differentially expressed genes
+library(tidyverse)
+library(hypeR)
+library(dplyr)
+library('org.Hs.eg.db')
+
+##Set working directory to where your files will be saved
+setwd("~/Documents/Daria/MODIFY/Output")
+
+###Load csv file that has your differentially expressed genes
+df <- read.csv("~/Documents/Daria/MODIFY/gene_exp.csv")
+head(df)
+
+# convert to numeric
+df$log2_fold_change <- as.numeric(as.character(df$log2_fold_change))
+df$p_value <- as.numeric(as.character(df$p_value))
+df$q_value <- as.numeric(as.character(df$q_value))
+df$value_1 <- as.numeric(as.character(df$value_1))
+df$value_2 <- as.numeric(as.character(df$value_2))
+df$test_stat <- as.numeric(as.character(df$test_stat))
+
+# display type
+class(df$test_stat)
+
+# filter
+clean <- filter( 
+  df,  status=="OK" & log2_fold_change != 'inf'  & log2_fold_change != 'nan') 
+
+new_df <- subset(clean, log2_fold_change != 0 & value_1 != 0 & value_2 != 0 & test_stat !=0) 
+
+summary(new_df$value_1)
+summary(new_df$gene)
+summary(new_df$log2_fold_change)
+table(new_df$log2_fold_change)
+table(new_df$gene)
+
+# create group variables
+library(dplyr)
+
+attach(new_df)
+new_df$group_1[sample_1 == 'q1'] <- "Steatosis"
+new_df$group_1[sample_1 == 'q2'] <- "Fibrosis"
+detach(new_df)
+
+attach(new_df)
+new_df$group_2[sample_2 == 'q2'] <- "Fibrosis"
+new_df$group_2[sample_2 == 'q3'] <- "Control"
+detach(new_df)
+
+table(new_df$sample_1)
+
+
+
+
+
+# filter for each pair of comparisons
+
+# Fibrosis v. control
+
+Fibrosis_control <- filter( 
+  new_df, group_1 == "Fibrosis" & group_2 == "Control") 
+
+str(Fibrosis_control)
+str(Up)
+
+unique(Fibrosis_control$group_2)
+head(Fibrosis_control)
+
+###Get background list of genes expressed in the tissue
+background <- Fibrosis_control$gene
+
+###Download data sets
+Hallmark <- msigdb_gsets("Homo sapiens", "H", clean=TRUE)
+Reactome <- msigdb_gsets("Homo sapiens", "C2", "CP:REACTOME", clean=TRUE)
+BP <- msigdb_gsets("Homo sapiens", "C5", "BP", clean=TRUE)
+CC <- msigdb_gsets("Homo sapiens", "C5", "CC", clean=TRUE)
+KEGG <- msigdb_gsets("Homo sapiens", "C2", "KEGG", clean=TRUE)
+
+
+upregulated <- function(clean, logfc){
+  clean <- subset(clean, clean$q_value < 0.05 & clean$log2_fold_change > logfc)
+  clean <- clean  %>% dplyr::select(3, 10)
+  clean <- clean[order(-clean$log2_fold_change),] 
+  return(clean)
+}
+
+downregulated <- function(clean, logfc){
+  clean <- subset(clean, clean$q_value < 0.05 & clean$log2_fold_change < logfc)
+  clean <- clean  %>% dplyr::select(3, 10)
+  clean <- clean[order(clean$log2_fold_change),] 
+  return(clean)
+}
+
+
+###Filter to upregulated genes, log FC can be modified
+Up_fibrosis_v_control <- upregulated(Fibrosis_control, logfc = 0.25)
+Up_Genes_Fibrosis_v_control <- Up_fibrosis_v_control$gene
+
+
+###You can amend cut off as necessary
+mhyp <- hypeR(Up_Genes_Fibrosis_v_control, BP, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+mhyp2 <- hypeR(Up_Genes_Fibrosis_v_control, Hallmark, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+mhyp3 <- hypeR(Up_Genes_Fibrosis_v_control, Reactome, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+mhyp4 <- hypeR(Up_Genes_Fibrosis_v_control, CC, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+mhyp5 <- hypeR(Up_Genes_Fibrosis_v_control, KEGG, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+
+##plot pathway analysis across all clusters
+png("Up_Genes_Fibrosis_v_Control_BP.png")
+hyp_dots(mhyp, merge=TRUE, top = 20, pval=0.05, fdr = 0.05)
+dev.off()
+png("Up_Genes_Fibrosis_v_Control_Hallmark.png")
+hyp_dots(mhyp2, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Up_Genes_Fibrosis_v_Control_Reactome.png")
+hyp_dots(mhyp3, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Up_Genes_Fibrosis_v_Control_CC.png")
+hyp_dots(mhyp4, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Up_Genes_Fibrosis_v_Control_KEGG.png")
+hyp_dots(mhyp5, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+
+hyp_to_excel(mhyp, 'Up_fibrosis_v_control.BP.xlsx')
+hyp_to_excel(mhyp2, 'Up_fibrosis_v_control.Hallmark.xlsx')
+hyp_to_excel(mhyp3, 'Up_fibrosis_v_control.Reactome.xlsx')
+hyp_to_excel(mhyp4, 'Up_fibrosis_v_control.CC.xlsx')
+hyp_to_excel(mhyp5, 'Up_fibrosis_v_control.KEGG.xlsx')
+
+###Filter to downregulated genes, log FC can be modified
+Down_fibrosis_v_control <- downregulated(Fibrosis_control, logfc = 0.25)
+Down_Genes_Fibrosis_v_control <- Down_fibrosis_v_control$gene
+
+
+###You can amend cut off as necessary
+dhyp <- hypeR(Down_Genes_Fibrosis_v_control, BP, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+dhyp2 <- hypeR(Down_Genes_Fibrosis_v_control, Hallmark, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+dhyp3 <- hypeR(Down_Genes_Fibrosis_v_control, Reactome, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+dhyp4 <- hypeR(Down_Genes_Fibrosis_v_control, CC, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+dhyp5 <- hypeR(Down_Genes_Fibrosis_v_control, KEGG, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+
+##plot pathway analysis across all clusters
+png("Down_Genes_Fibrosis_v_control_BP.png")
+hyp_dots(dhyp, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Down_Genes_Fibrosis_v_control_Hallmark.png")
+hyp_dots(dhyp2, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Down_Genes_Fibrosis_v_control_Reactome.png")
+hyp_dots(dhyp3, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Down_Genes_Fibrosis_v_control_CC.png")
+hyp_dots(dhyp4, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Down_Genes_Fibrosis_v_control_KEGG.png")
+hyp_dots(dhyp5, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+
+
+hyp_to_excel(dhyp, 'Down_fibrosis_v_control.BP.xlsx')
+hyp_to_excel(dhyp2, 'Down_fibrosis_v_control.Hallmark.xlsx')
+hyp_to_excel(dhyp3, 'Down_fibrosis_v_control.Reactome.xlsx')
+hyp_to_excel(dhyp4, 'Down_fibrosis_v_control.CC.xlsx')
+hyp_to_excel(dhyp5, 'Down_fibrosis_v_control.KEGG.xlsx')
+
+
+
+
+
+# filter to steatosis v control
+
+Steatosis_control <- filter( 
+  new_df, group_1 == "Steatosis" & group_2 == "Control") 
+
+
+unique(Steatosis_control$group_2)
+head(Steatosis_control)
+
+###Get background list of genes expressed in the tissue
+background <- Steatosis_control$gene
+
+###Download data sets
+Hallmark <- msigdb_gsets("Homo sapiens", "H", clean=TRUE)
+Reactome <- msigdb_gsets("Homo sapiens", "C2", "CP:REACTOME", clean=TRUE)
+BP <- msigdb_gsets("Homo sapiens", "C5", "BP", clean=TRUE)
+CC <- msigdb_gsets("Homo sapiens", "C5", "CC", clean=TRUE)
+KEGG <- msigdb_gsets("Homo sapiens", "C2", "KEGG", clean=TRUE)
+
+
+upregulated <- function(clean, logfc){
+  clean <- subset(clean, clean$q_value < 0.05 & clean$log2_fold_change > logfc)
+  clean <- clean  %>% dplyr::select(3, 10)
+  clean <- clean[order(-clean$log2_fold_change),] 
+  return(clean)
+}
+
+downregulated <- function(clean, logfc){
+  clean <- subset(clean, clean$q_value < 0.05 & clean$log2_fold_change < logfc)
+  clean <- clean  %>% dplyr::select(3, 10)
+  clean <- clean[order(clean$log2_fold_change),] 
+  return(clean)
+}
+
+
+###Filter to upregulated genes, log FC can be modified
+Up_steatosis_v_control <- upregulated(Steatosis_control, logfc = 0.25)
+Up_Genes_Steatosis_v_control <- Up_steatosis_v_control$gene
+
+
+###You can amend cut off as necessary
+mhyp <- hypeR(Up_Genes_Steatosis_v_control, BP, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+mhyp2 <- hypeR(Up_Genes_Steatosis_v_control, Hallmark, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+mhyp3 <- hypeR(Up_Genes_Steatosis_v_control, Reactome, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+mhyp4 <- hypeR(Up_Genes_Steatosis_v_control, CC, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+mhyp5 <- hypeR(Up_Genes_Steatosis_v_control, KEGG, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+
+##plot pathway analysis across all clusters
+png("Up_Genes_Steatosis_v_Control_BP.png")
+hyp_dots(mhyp, merge=TRUE, top = 20, pval=0.05, fdr = 0.05)
+dev.off()
+png("Up_Genes_Steatosis_v_Control_Hallmark.png")
+hyp_dots(mhyp2, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Up_Genes_Steatosis_v_Control_Reactome.png")
+hyp_dots(mhyp3, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Up_Genes_Steatosis_v_Control_CC.png")
+hyp_dots(mhyp4, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Up_Genes_Steatosis_v_Control_KEGG.png")
+hyp_dots(mhyp5, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+
+hyp_to_excel(mhyp, 'Up_steatosis_v_control.BP.xlsx')
+hyp_to_excel(mhyp2, 'Up_steatosis_v_control.Hallmark.xlsx')
+hyp_to_excel(mhyp3, 'Up_steatosis_v_control.Reactome.xlsx')
+hyp_to_excel(mhyp4, 'Up_steatosis_v_control.CC.xlsx')
+hyp_to_excel(mhyp5, 'Up_steatosis_v_control.KEGG.xlsx')
+
+###Filter to downregulated genes, log FC can be modified
+Down_steatosis_v_control <- downregulated(Steatosis_control, logfc = 0.25)
+Down_Genes_steatosis_v_control <- Down_steatosis_v_control$gene
+
+
+###You can amend cut off as necessary
+dhyp <- hypeR(Down_Genes_steatosis_v_control, BP, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+dhyp2 <- hypeR(Down_Genes_steatosis_v_control, Hallmark, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+dhyp3 <- hypeR(Down_Genes_steatosis_v_control, Reactome, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+dhyp4 <- hypeR(Down_Genes_steatosis_v_control, CC, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+dhyp5 <- hypeR(Down_Genes_steatosis_v_control, KEGG, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+
+##plot pathway analysis across all clusters
+png("Down_Genes_Steatosis_v_control_BP.png")
+hyp_dots(dhyp, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Down_Genes_Steatosis_v_control_Hallmark.png")
+hyp_dots(dhyp2, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Down_Genes_Steatosis_v_control_Reactome.png")
+hyp_dots(dhyp3, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Down_Genes_Steatosis_v_control_CC.png")
+hyp_dots(dhyp4, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Down_Genes_Steatosis_v_control_KEGG.png")
+hyp_dots(dhyp5, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+
+
+hyp_to_excel(dhyp, 'Down_steatosis_v_control.BP.xlsx')
+hyp_to_excel(dhyp2, 'Down_steatosis_v_control.Hallmark.xlsx')
+hyp_to_excel(dhyp3, 'Down_steatosis_v_control.Reactome.xlsx')
+hyp_to_excel(dhyp4, 'Down_steatosis_v_control.CC.xlsx')
+hyp_to_excel(dhyp5, 'Down_steatosis_v_control.KEGG.xlsx')
+
+
+
+########################## filter to fibrosis v. steatosis
+
+Fibrosis_steatosis <- filter( 
+  new_df, group_1 == "Steatosis" & group_2 == "Fibrosis") 
+
+unique(Fibrosis_steatosis$group_2)
+head(Fibrosis_steatosis)
+
+###Get background list of genes expressed in the tissue
+background <- Fibrosis_steatosis$gene
+
+###Download data sets
+Hallmark <- msigdb_gsets("Homo sapiens", "H", clean=TRUE)
+Reactome <- msigdb_gsets("Homo sapiens", "C2", "CP:REACTOME", clean=TRUE)
+BP <- msigdb_gsets("Homo sapiens", "C5", "BP", clean=TRUE)
+CC <- msigdb_gsets("Homo sapiens", "C5", "CC", clean=TRUE)
+KEGG <- msigdb_gsets("Homo sapiens", "C2", "KEGG", clean=TRUE)
+
+
+upregulated <- function(clean, logfc){
+  clean <- subset(clean, clean$q_value < 0.05 & clean$log2_fold_change > logfc)
+  clean <- clean  %>% dplyr::select(3, 10)
+  clean <- clean[order(-clean$log2_fold_change),] 
+  return(clean)
+}
+
+downregulated <- function(clean, logfc){
+  clean <- subset(clean, clean$q_value < 0.05 & clean$log2_fold_change < logfc)
+  clean <- clean  %>% dplyr::select(3, 10)
+  clean <- clean[order(clean$log2_fold_change),] 
+  return(clean)
+}
+
+
+###Filter to upregulated genes, log FC can be modified
+Up_fibrosis_v_steatosis <- upregulated(Fibrosis_steatosis, logfc = 0.25)
+Up_Genes_Fibrosis_v_Steatosis <- Up_fibrosis_v_steatosis$gene
+
+
+###You can amend cut off as necessary
+mhyp <- hypeR(Up_Genes_Fibrosis_v_Steatosis, BP, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+mhyp2 <- hypeR(Up_Genes_Fibrosis_v_Steatosis, Hallmark, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+mhyp3 <- hypeR(Up_Genes_Fibrosis_v_Steatosis, Reactome, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+mhyp4 <- hypeR(Up_Genes_Fibrosis_v_Steatosis, CC, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+mhyp5 <- hypeR(Up_Genes_Fibrosis_v_Steatosis, KEGG, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+
+##plot pathway analysis across all clusters
+png("Up_Genes_Fibrosis_v_Steatosis_BP.png")
+hyp_dots(mhyp, merge=TRUE, top = 20, pval=0.05, fdr = 0.05)
+dev.off()
+png("Up_Genes_Fibrosis_v_Steatosis_Hallmark.png")
+hyp_dots(mhyp2, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Up_Genes_Fibrosis_v_Steatosis_Reactome.png")
+hyp_dots(mhyp3, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Up_Genes_Fibrosis_v_Steatosis_CC.png")
+hyp_dots(mhyp4, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Up_Genes_Fibrosis_v_Steatosis_KEGG.png")
+hyp_dots(mhyp5, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+
+hyp_to_excel(mhyp, 'Up_fibrosis_v_steatosis.BP.xlsx')
+hyp_to_excel(mhyp2, 'Up_fibrosis_v_steatosis.Hallmark.xlsx')
+hyp_to_excel(mhyp3, 'Up_fibrosis_v_steatosis.Reactome.xlsx')
+hyp_to_excel(mhyp4, 'Up_fibrosis_v_steatosis.CC.xlsx')
+hyp_to_excel(mhyp5, 'Up_fibrosis_v_steatosis.KEGG.xlsx')
+
+###Filter to downregulated genes, log FC can be modified
+Down_fibrosis_v_steatosis <- downregulated(Fibrosis_steatosis, logfc = 0.25)
+Down_Genes_fibrosis_v_steatosis <- Down_fibrosis_v_steatosis$gene
+
+
+###You can amend cut off as necessary
+dhyp <- hypeR(Down_Genes_fibrosis_v_steatosis, BP, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+dhyp2 <- hypeR(Down_Genes_fibrosis_v_steatosis, Hallmark, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+dhyp3 <- hypeR(Down_Genes_fibrosis_v_steatosis, Reactome, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+dhyp4 <- hypeR(Down_Genes_fibrosis_v_steatosis, CC, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+dhyp5 <- hypeR(Down_Genes_fibrosis_v_steatosis, KEGG, test="hypergeometric", background=background, absolute = FALSE, pval = 0.05)
+
+##plot pathway analysis across all clusters
+png("Down_Genes_fibrosis_v_Steatosis_BP.png")
+hyp_dots(dhyp, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Down_Genes_fibrosis_v_Steatosis_Hallmark.png")
+hyp_dots(dhyp2, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Down_Genes_fibrosis_v_Steatosis_Reactome.png")
+hyp_dots(dhyp3, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Down_Genes_fibrosis_v_Steatosis_CC.png")
+hyp_dots(dhyp4, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+png("Down_Genes_fibrosis_v_Steatosis_KEGG.png")
+hyp_dots(dhyp5, merge=TRUE, top = 20, pval=0.05)
+dev.off()
+
+
+hyp_to_excel(dhyp, 'Down_fibrosis_v_steatosis.BP.xlsx')
+hyp_to_excel(dhyp2, 'Down_fibrosis_v_steatosis.Hallmark.xlsx')
+hyp_to_excel(dhyp3, 'Down_fibrosis_v_steatosis.Reactome.xlsx')
+hyp_to_excel(dhyp4, 'Down_fibrosis_v_steatosis.CC.xlsx')
+hyp_to_excel(dhyp5, 'Down_fibrosis_v_steatosis.KEGG.xlsx')
+
+
